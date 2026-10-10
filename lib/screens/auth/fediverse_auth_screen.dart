@@ -12,48 +12,59 @@ class FediverseAuthScreen extends StatefulWidget {
 
 class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   final _serverController = TextEditingController();
+  final _usernameController = TextEditingController();
   bool _isConnecting = false;
   String? _errorMessage;
 
   @override
   void dispose() {
     _serverController.dispose();
+    _usernameController.dispose();
     super.dispose();
   }
 
   void _startDynamicOAuth() async {
     final server = _serverController.text.trim();
+    final handleUser = _usernameController.text.trim();
+
     if (server.isEmpty) {
       setState(() => _errorMessage = 'Inserisci il nome del server (es. mastodon.social)');
       return;
     }
+
+    if (handleUser.isEmpty) {
+      setState(() => _errorMessage = 'Inserisci il tuo username sul server federato.');
+      return;
+    }
+
+    final handle = '@${handleUser.replaceAll('@', '')}@$server';
 
     setState(() {
       _isConnecting = true;
       _errorMessage = null;
     });
 
-    // Simula il flusso OAuth dinamico dell'istanza ActivityPub
-    await Future.delayed(const Duration(seconds: 2));
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Simula autenticazione OAuth dinamica e verifica esistenza profilo federato su Supabase
+    await Future.delayed(const Duration(milliseconds: 1500));
+    final existingUser = await authProvider.loginOrRegisterFediverse(handle);
 
     if (!mounted) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
-    // Check se l'utente esiste già
-    final isExistingUser = false; // Stub per primo accesso federato
-
     setState(() => _isConnecting = false);
 
-    if (isExistingUser) {
-      Navigator.pop(context);
+    if (existingUser != null) {
+      // Utente esiste -> Vai alla Home (gestito via notifyListeners/AuthWrapper o pop)
+      Navigator.popUntil(context, (route) => route.isFirst);
     } else {
+      // Nuovo utente -> Vai all'onboarding
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => OnboardingScreen(
             isFediverse: true,
-            fediverseHandle: '@user@$server',
+            fediverseHandle: handle,
           ),
         ),
       );
@@ -67,7 +78,7 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
         title: const Text('Accedi con ActivityPub'),
       ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,17 +89,25 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Inserisci il dominio del tuo server Mastodon, Pleroma, Pixelfed o Misskey per iniziare l\'autenticazione OAuth dinamica.',
+                'Inserisci il dominio del tuo server ActivityPub e il tuo username per connetterti in OAuth.',
                 style: TextStyle(color: Colors.grey[400], fontSize: 13),
               ),
               const SizedBox(height: 24),
 
               if (_errorMessage != null) ...[
-                Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
               ],
 
               TextField(
@@ -99,7 +118,17 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              TextField(
+                controller: _usernameController,
+                decoration: InputDecoration(
+                  labelText: 'Username del tuo account federato',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 24),
 
               ElevatedButton(
                 onPressed: _isConnecting ? null : _startDynamicOAuth,
@@ -117,10 +146,10 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                           SizedBox(width: 12),
-                          Text('Connessione al server...'),
+                          Text('Connessione Dynamic OAuth...'),
                         ],
                       )
-                    : const Text('Avvia Dynamic OAuth'),
+                    : const Text('Autenticati con ActivityPub'),
               ),
             ],
           ),

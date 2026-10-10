@@ -53,18 +53,54 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Verifica se uno username è già preso nel database Supabase
+  Future<bool> checkUsernameExists(String username) async {
+    try {
+      final res = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username.trim().toLowerCase())
+          .maybeSingle();
+      return res != null;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Verifica se un'email esiste nel sistema
   Future<bool> checkEmailExists(String email) async {
     try {
-      await _supabase
-          .from('profiles')
-          .select('id')
-          .limit(1);
-      // In Supabase client side non c'è una direct API per controllare se l'email esiste senza tentare la sign-in,
-      // usiamo un fallback strutturato o proviamo sign-in con password dummy
-      return false; // Gestito nel flusso UI
+      await _supabase.from('profiles').select('id').limit(1);
+      return false;
     } catch (e) {
       return false;
+    }
+  }
+
+  // Autenticazione / Registrazione ActivityPub simulata con persistenza profilo
+  Future<UserProfile?> loginOrRegisterFediverse(String fediverseHandle) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final res = await _supabase
+          .from('profiles')
+          .select()
+          .eq('fediverse_handle', fediverseHandle)
+          .maybeSingle();
+
+      if (res != null) {
+        _currentProfile = UserProfile.fromJson(res);
+        return _currentProfile;
+      } else {
+        // Nuovo utente federato
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Fediverse auth error: $e');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -111,12 +147,12 @@ class AuthProvider with ChangeNotifier {
     String? fediverseHandle,
   }) async {
     final user = _supabase.auth.currentUser;
-    if (user == null) return;
+    final userId = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
     final profileData = {
-      'id': user.id,
+      'id': userId,
       'full_name': fullName,
-      'username': username,
+      'username': username.trim().toLowerCase(),
       'avatar_url': avatarUrl,
       'is_fediverse': isFediverse,
       'fediverse_handle': fediverseHandle,
@@ -125,27 +161,35 @@ class AuthProvider with ChangeNotifier {
     };
 
     await _supabase.from('profiles').upsert(profileData);
-    await fetchProfile(user.id);
+    if (user != null) {
+      await fetchProfile(user.id);
+    } else {
+      _currentProfile = UserProfile.fromJson(profileData);
+    }
+    notifyListeners();
   }
 
   // Update Profile Info
   Future<void> updateProfile({
+    String? username,
     String? fullName,
     String? bio,
     String? avatarUrl,
     String? bannerUrl,
   }) async {
     final user = _supabase.auth.currentUser;
-    if (user == null) return;
+    final currentId = user?.id ?? _currentProfile?.id;
+    if (currentId == null) return;
 
     final updates = <String, dynamic>{};
+    if (username != null) updates['username'] = username.trim().toLowerCase();
     if (fullName != null) updates['full_name'] = fullName;
     if (bio != null) updates['bio'] = bio;
     if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
     if (bannerUrl != null) updates['banner_url'] = bannerUrl;
 
-    await _supabase.from('profiles').update(updates).eq('id', user.id);
-    await fetchProfile(user.id);
+    await _supabase.from('profiles').update(updates).eq('id', currentId);
+    await fetchProfile(currentId);
   }
 
   // Logout
@@ -157,9 +201,9 @@ class AuthProvider with ChangeNotifier {
 
   // Delete Account
   Future<void> deleteAccount() async {
-    final user = _supabase.auth.currentUser;
-    if (user != null) {
-      await _supabase.from('profiles').delete().eq('id', user.id);
+    final currentId = _supabase.auth.currentUser?.id ?? _currentProfile?.id;
+    if (currentId != null) {
+      await _supabase.from('profiles').delete().eq('id', currentId);
       await signOut();
     }
   }

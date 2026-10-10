@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/friends_provider.dart';
 import '../home/home_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -25,14 +25,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _fullNameController = TextEditingController();
   final _usernameController = TextEditingController();
   String? _avatarUrl;
+  
+  bool _isCheckingUsername = false;
+  String? _errorMessage;
 
-  // Lista fittizia di persone con cui l'utente ha interagito nel Fediverso
-  final List<Map<String, String>> _fediverseContacts = [
-    {'name': 'Alex Rivera', 'handle': '@alex@mastodon.social'},
-    {'name': 'Elena Rostova', 'handle': '@elena@pixelfed.social'},
-    {'name': 'Marco Rossi', 'handle': '@marco@fedibox.it'},
-  ];
-  final Set<String> _sentRequests = {};
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
@@ -42,8 +39,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  void _nextPage() {
-    if (_currentStep < (widget.isFediverse ? 4 : 3)) {
+  void _nextPage() async {
+    setState(() => _errorMessage = null);
+
+    // Step 1: Nome e cognome non vuoti
+    if (_currentStep == 0) {
+      if (_fullNameController.text.trim().isEmpty) {
+        setState(() => _errorMessage = 'Il nome e cognome non possono essere vuoti.');
+        return;
+      }
+    }
+
+    // Step 2: Username non vuoto e controllo duplicati su Supabase
+    if (_currentStep == 1) {
+      final username = _usernameController.text.trim();
+      if (username.isEmpty) {
+        setState(() => _errorMessage = 'Lo username non può essere vuoto.');
+        return;
+      }
+
+      setState(() => _isCheckingUsername = true);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final isTaken = await authProvider.checkUsernameExists(username);
+      setState(() => _isCheckingUsername = false);
+
+      if (isTaken) {
+        setState(() => _errorMessage = 'Lo username "$username" è già stato preso. Scegline un altro.');
+        return;
+      }
+    }
+
+    if (_currentStep < 3) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -51,6 +77,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       setState(() => _currentStep++);
     } else {
       _finishOnboarding();
+    }
+  }
+
+  Future<void> _pickAvatarImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        setState(() {
+          _avatarUrl = image.path;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Immagine di profilo selezionata!')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _avatarUrl = 'https://picsum.photos/200';
+      });
     }
   }
 
@@ -75,7 +121,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalSteps = widget.isFediverse ? 5 : 4;
+    const totalSteps = 4;
 
     return Scaffold(
       appBar: AppBar(
@@ -90,6 +136,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               backgroundColor: Colors.grey[800],
               valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
             ),
+            if (_errorMessage != null)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: PageView(
                 controller: _pageController,
@@ -102,7 +170,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: TextField(
                       controller: _fullNameController,
                       decoration: InputDecoration(
-                        labelText: 'Nome e Cognome',
+                        labelText: 'Nome e Cognome *',
                         prefixIcon: const Icon(Icons.badge_outlined),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -113,79 +181,79 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   _buildStepContainer(
                     title: 'Scegli un Username',
                     subtitle: 'Questo sarà il tuo identificativo unico su Feditok.',
-                    child: TextField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'Username (es. @niko)',
-                        prefixIcon: const Icon(Icons.alternate_email),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-
-                  // Step 3: Immagine Profilo
-                  _buildStepContainer(
-                    title: 'Immagine Profilo',
-                    subtitle: 'Personalizza la tua scheda prima di iniziare.',
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: Colors.grey[800],
-                          backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
-                          child: _avatarUrl == null
-                              ? const Icon(Icons.person, size: 50, color: Colors.white70)
-                              : null,
+                        TextField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            labelText: 'Username (es. @niko) *',
+                            prefixIcon: const Icon(Icons.alternate_email),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _avatarUrl = 'https://picsum.photos/200';
-                            });
-                          },
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Carica Immagine Avatar'),
-                        ),
+                        if (_isCheckingUsername) ...[
+                          const SizedBox(height: 12),
+                          const Row(
+                            children: [
+                              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                              SizedBox(width: 10),
+                              Text('Verifica disponibilità username su server...', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
 
-                  // Step 4 (Se ActivityPub): Lista interazioni
-                  if (widget.isFediverse)
-                    _buildStepContainer(
-                      title: 'Amici dal Fediverso',
-                      subtitle: 'Ecco le persone con cui hai interagito sul tuo server. Invia una richiesta!',
-                      child: Expanded(
-                        child: ListView.builder(
-                          itemCount: _fediverseContacts.length,
-                          itemBuilder: (context, index) {
-                            final contact = _fediverseContacts[index];
-                            final isSent = _sentRequests.contains(contact['handle']);
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                child: Text(contact['name']![0]),
-                              ),
-                              title: Text(contact['name']!),
-                              subtitle: Text(contact['handle']!),
-                              trailing: ElevatedButton(
-                                onPressed: isSent
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _sentRequests.add(contact['handle']!);
-                                        });
-                                      },
-                                child: Text(isSent ? 'Inviata' : 'Aggiungi'),
-                              ),
-                            );
-                          },
-                        ),
+                  // Step 3: Immagine Profilo (Centrata!)
+                  Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Immagine Profilo',
+                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Personalizza la tua foto prima di iniziare.',
+                            style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 28),
+                          CircleAvatar(
+                            radius: 54,
+                            backgroundColor: Colors.grey[800],
+                            backgroundImage: _avatarUrl != null
+                                ? (_avatarUrl!.startsWith('http')
+                                    ? NetworkImage(_avatarUrl!) as ImageProvider
+                                    : AssetImage(_avatarUrl!)) // Fallback per il file picker
+                                : null,
+                            child: _avatarUrl == null
+                                ? const Icon(Icons.person, size: 54, color: Colors.white70)
+                                : null,
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: _pickAvatarImage,
+                            icon: const Icon(Icons.photo_camera_outlined),
+                            label: const Text('Carica Immagine Avatar'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
 
-                  // Step Finale: Regole Chiave dell'App
+                  // Step 4 (Ex finale): Regole Chiave dell'App
                   _buildStepContainer(
                     title: 'Regole della Community',
                     subtitle: 'Feditok è pensato per proteggere la tua privacy e combattere il doomscrolling.',
@@ -224,7 +292,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _nextPage,
+                  onPressed: _isCheckingUsername ? null : _nextPage,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

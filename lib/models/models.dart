@@ -60,6 +60,8 @@ class VideoItem {
   final String userId;
   final String videoUrl;
   final String? caption;
+  final String? title;
+  final List<String> taggedUsernames;
   final DateTime createdAt;
   final UserProfile? author;
   final int likesCount;
@@ -70,6 +72,8 @@ class VideoItem {
     required this.userId,
     required this.videoUrl,
     this.caption,
+    this.title,
+    this.taggedUsernames = const [],
     required this.createdAt,
     this.author,
     this.likesCount = 0,
@@ -82,6 +86,10 @@ class VideoItem {
       userId: json['user_id'] as String,
       videoUrl: json['video_url'] as String,
       caption: json['caption'] as String?,
+      title: json['title'] as String?,
+      taggedUsernames: json['tagged_usernames'] != null 
+          ? List<String>.from(json['tagged_usernames']) 
+          : [],
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -90,6 +98,26 @@ class VideoItem {
       isLikedByMe: isLiked,
     );
   }
+}
+
+class AppNotification {
+  final String id;
+  final String type; // 'friend_request', 'like', 'comment'
+  final String title;
+  final String message;
+  final DateTime createdAt;
+  final bool isRead;
+  final String? fromUserId;
+
+  AppNotification({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+    this.isRead = false,
+    this.fromUserId,
+  });
 }
 
 class FriendShip {

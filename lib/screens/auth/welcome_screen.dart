@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'email_auth_screen.dart';
 import 'fediverse_auth_screen.dart';
 
