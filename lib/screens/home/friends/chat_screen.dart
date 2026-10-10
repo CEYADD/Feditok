@@ -60,7 +60,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-            color: Colors.amber.withOpacity(0.15),
+            color: Colors.amber.withValues(alpha: 0.15),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

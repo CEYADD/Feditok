@@ -117,9 +117,9 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.15),
+                    color: Colors.red.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
                   ),
                   child: Text(
                     _errorMessage!,

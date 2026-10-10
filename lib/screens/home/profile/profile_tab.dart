@@ -127,10 +127,10 @@ class ProfileTab extends StatelessWidget {
             // Rank Coming Soon Card
             Card(
               margin: const EdgeInsets.symmetric(horizontal: 20),
-              color: Colors.amber.withOpacity(0.1),
+              color: Colors.amber.withValues(alpha: 0.1),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                side: BorderSide(color: Colors.amber.withOpacity(0.4)),
+                side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
               ),
               child: const Padding(
                 padding: EdgeInsets.all(16.0),
