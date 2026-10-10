@@ -54,13 +54,14 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Verifica se un'email ha già un profilo o un account registrato
+  // Verifica se un'email ha già un profilo o un account registrato interrogando Supabase
   Future<Map<String, dynamic>> checkUserStatus(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
     try {
       final res = await _supabase
           .from('profiles')
           .select()
-          .eq('username', email.trim().toLowerCase()) // O ricerca per email se salvata
+          .eq('email', cleanEmail)
           .maybeSingle();
       
       if (res != null) {
@@ -72,6 +73,7 @@ class AuthProvider with ChangeNotifier {
       }
       return {'exists': false, 'isOnboardingCompleted': false};
     } catch (e) {
+      debugPrint('Error checking user email status: $e');
       return {'exists': false, 'isOnboardingCompleted': false};
     }
   }
@@ -132,26 +134,54 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // Autenticazione / Registrazione ActivityPub simulata
-  Future<UserProfile?> loginOrRegisterFediverse(String fediverseHandle) async {
+  // Autenticazione / Registrazione ActivityPub Dinamica con Supabase profiles
+  Future<UserProfile> loginOrRegisterFediverseProfile(Map<String, dynamic> fediverseData) async {
     _isLoading = true;
     notifyListeners();
     try {
+      final handle = fediverseData['fediverse_handle'] as String;
+
+      // Cerca se esiste già nel DB Supabase per fediverse_handle
       final res = await _supabase
           .from('profiles')
           .select()
-          .eq('fediverse_handle', fediverseHandle)
+          .eq('fediverse_handle', handle)
           .maybeSingle();
 
       if (res != null) {
         _currentProfile = UserProfile.fromJson(res);
-        return _currentProfile;
+        return _currentProfile!;
       } else {
-        return null;
+        // Genera un UUID per Supabase o inserisci il nuovo profilo federato
+        final user = _supabase.auth.currentUser;
+        final profileId = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+        final newProfileMap = {
+          'username': (fediverseData['username'] as String).toLowerCase(),
+          'full_name': fediverseData['full_name'],
+          'avatar_url': fediverseData['avatar_url'],
+          'banner_url': fediverseData['banner_url'],
+          'bio': fediverseData['bio'],
+          'is_fediverse': true,
+          'fediverse_handle': handle,
+          'rank': 'User',
+          'is_onboarding_completed': true,
+          'created_at': DateTime.now().toIso8601String(),
+        };
+
+        // Inserimento o upsert nel DB Supabase
+        final inserted = await _supabase
+            .from('profiles')
+            .upsert(newProfileMap)
+            .select()
+            .single();
+
+        _currentProfile = UserProfile.fromJson(inserted);
+        return _currentProfile!;
       }
     } catch (e) {
-      debugPrint('Fediverse auth error: $e');
-      return null;
+      debugPrint('Error syncing Fediverse profile to Supabase: $e');
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -213,8 +243,11 @@ class AuthProvider with ChangeNotifier {
       uploadedAvatarPublicUrl = await uploadAvatarToProfilePicBucket(avatarUrl);
     }
 
+    final userEmail = user?.email;
+
     final profileData = {
       'id': userId,
+      'email': userEmail?.trim().toLowerCase(),
       'full_name': fullName,
       'username': username.trim().toLowerCase(),
       'avatar_url': uploadedAvatarPublicUrl,

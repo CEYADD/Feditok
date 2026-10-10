@@ -1,6 +1,7 @@
 class UserProfile {
   final String id;
   final String username;
+  final String? email;
   final String? fullName;
   final String? avatarUrl;
   final String? bannerUrl;
@@ -14,6 +15,7 @@ class UserProfile {
   UserProfile({
     required this.id,
     required this.username,
+    this.email,
     this.fullName,
     this.avatarUrl,
     this.bannerUrl,
@@ -29,6 +31,7 @@ class UserProfile {
     return UserProfile(
       id: json['id'] as String,
       username: json['username'] as String? ?? 'user',
+      email: json['email'] as String?,
       fullName: json['full_name'] as String?,
       avatarUrl: json['avatar_url'] as String?,
       bannerUrl: json['banner_url'] as String?,
@@ -47,6 +50,7 @@ class UserProfile {
     return {
       'id': id,
       'username': username,
+      'email': email,
       'full_name': fullName,
       'avatar_url': avatarUrl,
       'banner_url': bannerUrl,

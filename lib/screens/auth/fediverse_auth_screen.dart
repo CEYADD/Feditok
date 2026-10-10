@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 import '../../providers/auth_provider.dart';
-import '../onboarding/onboarding_screen.dart';
+import '../../services/activity_pub_oauth.dart';
+import '../home/home_screen.dart';
 
 class FediverseAuthScreen extends StatefulWidget {
   const FediverseAuthScreen({super.key});
@@ -11,63 +15,145 @@ class FediverseAuthScreen extends StatefulWidget {
 }
 
 class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
-  final _serverController = TextEditingController();
-  final _usernameController = TextEditingController();
+  final _inputController = TextEditingController();
+  
   bool _isConnecting = false;
+  String? _statusMessage;
   String? _errorMessage;
+
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  String? _currentInstance;
+  String? _clientId;
+  String? _clientSecret;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  /// Inizializza l'ascolto del callback Deep Link (`feditok://login-callback?code=...`)
+  void _initDeepLinks() {
+    _appLinks = AppLinks();
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      if (uri.scheme == 'feditok' && uri.host == 'login-callback') {
+        final code = uri.queryParameters['code'];
+        if (code != null && code.isNotEmpty) {
+          _handleOAuthCallback(code);
+        }
+      }
+    }, onError: (err) {
+      setState(() => _errorMessage = 'Errore deep link callback: $err');
+    });
+  }
 
   @override
   void dispose() {
-    _serverController.dispose();
-    _usernameController.dispose();
+    _linkSubscription?.cancel();
+    _inputController.dispose();
     super.dispose();
   }
 
-  void _startDynamicOAuth() async {
-    final server = _serverController.text.trim();
-    final handleUser = _usernameController.text.trim();
+  void _startDynamicOAuthFlow() async {
+    final input = _inputController.text.trim();
 
-    if (server.isEmpty) {
-      setState(() => _errorMessage = 'Inserisci il nome del server (es. mastodon.social)');
+    if (input.isEmpty) {
+      setState(() => _errorMessage = 'Inserisci la tua istanza (es. mastodon.social) o il tuo handle (es. @niko@mastodon.social)');
       return;
     }
 
-    if (handleUser.isEmpty) {
-      setState(() => _errorMessage = 'Inserisci il tuo username sul server federato.');
+    final instanceDomain = DynamicActivityPubOAuth.extractDomain(input);
+    if (instanceDomain.isEmpty || !instanceDomain.contains('.')) {
+      setState(() => _errorMessage = 'Dominio istanza non valido.');
       return;
     }
-
-    final handle = '@${handleUser.replaceAll('@', '')}@$server';
 
     setState(() {
       _isConnecting = true;
       _errorMessage = null;
+      _statusMessage = 'Registrazione OAuth dinamica su https://$instanceDomain...';
     });
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
-    // Simula autenticazione OAuth dinamica e verifica esistenza profilo federato su Supabase
-    await Future.delayed(const Duration(milliseconds: 1500));
-    final existingUser = await authProvider.loginOrRegisterFediverse(handle);
+    try {
+      _currentInstance = instanceDomain;
 
-    if (!mounted) return;
+      // 1. Registra dinamicamente l'app sull'istanza dell'utente (`/api/v1/apps`)
+      final creds = await DynamicActivityPubOAuth.registerOAuthApp(instanceDomain);
+      _clientId = creds['client_id'];
+      _clientSecret = creds['client_secret'];
 
-    setState(() => _isConnecting = false);
+      setState(() => _statusMessage = 'Apertura pagina di autorizzazione dell\'istanza...');
 
-    if (existingUser != null) {
-      // Utente esiste -> Vai alla Home (gestito via notifyListeners/AuthWrapper o pop)
-      Navigator.popUntil(context, (route) => route.isFirst);
-    } else {
-      // Nuovo utente -> Vai all'onboarding
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OnboardingScreen(
-            isFediverse: true,
-            fediverseHandle: handle,
-          ),
-        ),
+      // 2. Genera l'URL OAuth e apre il browser dell'istanza
+      final authUrl = DynamicActivityPubOAuth.getAuthorizationUrl(
+        instanceDomain: instanceDomain,
+        clientId: _clientId!,
       );
+
+      final Uri uri = Uri.parse(authUrl);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('Impossibile aprire il browser per la registrazione.');
+      }
+
+      setState(() => _statusMessage = 'In attesa dell\'autorizzazione su $instanceDomain...');
+    } catch (e) {
+      setState(() {
+        _isConnecting = false;
+        _errorMessage = 'Errore OAuth Dinamico: ${e.toString()}';
+      });
+    }
+  }
+
+  /// 3. Gestisce il token exchange ed il sync del profilo con Supabase al ritorno dal Deep Link
+  void _handleOAuthCallback(String code) async {
+    if (_currentInstance == null || _clientId == null || _clientSecret == null) {
+      setState(() {
+        _isConnecting = false;
+        _errorMessage = 'Sessione OAuth scaduta o non valida. Riprova.';
+      });
+      return;
+    }
+
+    setState(() => _statusMessage = 'Scambio token e autenticazione in corso...');
+
+    try {
+      // Scambio codice -> Access Token
+      final accessToken = await DynamicActivityPubOAuth.getAccessToken(
+        instanceDomain: _currentInstance!,
+        clientId: _clientId!,
+        clientSecret: _clientSecret!,
+        code: code,
+      );
+
+      setState(() => _statusMessage = 'Recupero dati profilo federato...');
+
+      // Recupera il profilo dall'istanza ActivityPub
+      final fediverseProfile = await DynamicActivityPubOAuth.fetchFediverseProfile(
+        instanceDomain: _currentInstance!,
+        accessToken: accessToken,
+      );
+
+      setState(() => _statusMessage = 'Sincronizzazione account su Supabase...');
+
+      // Crea o aggiorna il profilo su Supabase
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.loginOrRegisterFediverseProfile(fediverseProfile);
+
+      if (!mounted) return;
+
+      // Reindirizza direttamente alla HomeScreen dell'app
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      setState(() {
+        _isConnecting = false;
+        _errorMessage = 'Fallimento autenticazione federata: ${e.toString()}';
+      });
     }
   }
 
@@ -89,8 +175,8 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Inserisci il dominio del tuo server ActivityPub e il tuo username per connetterti in OAuth.',
-                style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                'Inserisci il tuo handle federato o l\'indirizzo della tua istanza (es. mastodon.social, pixelfed.social, fosstodon.org).\nFeditok si connetterà dinamicamente in OAuth.',
+                style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 24),
 
@@ -111,45 +197,46 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
               ],
 
               TextField(
-                controller: _serverController,
+                controller: _inputController,
+                enabled: !_isConnecting,
                 decoration: InputDecoration(
-                  labelText: 'Indirizzo Server (es. mastodon.social)',
-                  prefixIcon: const Icon(Icons.dns_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              TextField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  labelText: 'Username (es. @niko)',
-                  prefixIcon: const Icon(Icons.person_outline),
+                  labelText: 'Istanza o Handle (es. @niko@mastodon.social)',
+                  hintText: 'mastodon.social',
+                  prefixIcon: const Icon(Icons.hub_outlined),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
               const SizedBox(height: 24),
 
               ElevatedButton(
-                onPressed: _isConnecting ? null : _startDynamicOAuth,
+                onPressed: _isConnecting ? null : _startDynamicOAuthFlow,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _isConnecting
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                    ? Column(
                         children: [
-                          SizedBox(
+                          const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           ),
-                          SizedBox(width: 12),
-                          Text('Connessione Dynamic OAuth...'),
+                          if (_statusMessage != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _statusMessage!,
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ],
                       )
-                    : const Text('Autenticati con ActivityPub'),
+                    : const Text(
+                        'Avvia Dynamic OAuth',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
               ),
             ],
           ),
