@@ -1,0 +1,37 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup di Java (necessario per Flutter/Android)
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # Setup dell'ambiente Flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # Scarica le dipendenze
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Analizza il codice (trova syntax error, warning, variabili non usate, ecc.)
+      - name: Analyze project
+        run: flutter analyze
+
+      # Esegue i test automatici (se ne scriverai)
+      - name: Run tests
+        run: flutter test
