@@ -13,7 +13,7 @@ void main() async {
   // Inizializzazione Supabase con credenziali da env
   await Supabase.initialize(
     url: 'https://echqiwnipjxuscpwphto.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjaHFpd25pcGp4dXNjcHdwaHRvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MTYxMzQ0MSwiZXhwIjoyMTA3MTg5NDQxfQ.r-htntjMIPfQG3isEJCtPFauOVdmx9Zz4bhpC81mcy8',
+    publishableKey: 'sb_publishable_MLj_Wks0RSXaTAjTH1Ycbg_k7f8vfgM',
   );
 
   runApp(
