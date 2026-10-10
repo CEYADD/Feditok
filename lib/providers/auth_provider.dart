@@ -206,7 +206,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // Email / Password Sign Up
+  // Email / Password Sign Up (Inserisce subito i primi dati nel DB per evitare falsi negativi sul check email)
   Future<User?> signUpWithEmail(String email, String password) async {
     _isLoading = true;
     notifyListeners();
@@ -215,7 +215,29 @@ class AuthProvider with ChangeNotifier {
         email: email,
         password: password,
       );
-      return response.user;
+      
+      final user = response.user;
+      if (user != null) {
+        final cleanEmail = email.trim().toLowerCase();
+        final defaultUsername = cleanEmail.split('@').first;
+
+        // Inserimento immediato dei primi dati nel DB profiles
+        final initialProfileMap = {
+          'id': user.id,
+          'email': cleanEmail,
+          'username': defaultUsername,
+          'rank': 'User',
+          'is_onboarding_completed': false,
+          'created_at': DateTime.now().toIso8601String(),
+        };
+
+        await _supabase.from('profiles').upsert(initialProfileMap);
+        await fetchProfile(user.id);
+      }
+      return user;
+    } catch (e) {
+      debugPrint('Error signing up user and creating initial profile: $e');
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();

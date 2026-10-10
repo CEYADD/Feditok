@@ -1,8 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../services/activity_pub_oauth.dart';
 import '../home/home_screen.dart';
@@ -16,7 +18,7 @@ class FediverseAuthScreen extends StatefulWidget {
 
 class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   final _inputController = TextEditingController();
-  
+
   bool _isConnecting = false;
   String? _statusMessage;
   String? _errorMessage;
@@ -37,16 +39,19 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   /// Inizializza l'ascolto del callback Deep Link (`feditok://login-callback?code=...`)
   void _initDeepLinks() {
     _appLinks = AppLinks();
-    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
-      if (uri.scheme == 'feditok' && uri.host == 'login-callback') {
-        final code = uri.queryParameters['code'];
-        if (code != null && code.isNotEmpty) {
-          _handleOAuthCallback(code);
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (uri) {
+        if (uri.scheme == 'feditok' && uri.host == 'login-callback') {
+          final code = uri.queryParameters['code'];
+          if (code != null && code.isNotEmpty) {
+            _handleOAuthCallback(code);
+          }
         }
-      }
-    }, onError: (err) {
-      setState(() => _errorMessage = 'Errore deep link callback: $err');
-    });
+      },
+      onError: (err) {
+        setState(() => _errorMessage = 'Errore deep link callback: $err');
+      },
+    );
   }
 
   @override
@@ -60,7 +65,9 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
     final input = _inputController.text.trim();
 
     if (input.isEmpty) {
-      setState(() => _errorMessage = 'Inserisci la tua istanza (es. mastodon.social) o il tuo handle (es. @niko@mastodon.social)');
+      setState(
+        () => _errorMessage = 'Inserisci la tua istanza (es. mastodon.social) o il tuo handle (es. @niko@mastodon.social)',
+      );
       return;
     }
 
@@ -73,18 +80,24 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
     setState(() {
       _isConnecting = true;
       _errorMessage = null;
-      _statusMessage = 'Registrazione OAuth dinamica su https://$instanceDomain...';
+      _statusMessage =
+          'Registrazione OAuth dinamica su https://$instanceDomain...';
     });
 
     try {
       _currentInstance = instanceDomain;
 
       // 1. Registra dinamicamente l'app sull'istanza dell'utente (`/api/v1/apps`)
-      final creds = await DynamicActivityPubOAuth.registerOAuthApp(instanceDomain);
+      final creds = await DynamicActivityPubOAuth.registerOAuthApp(
+        instanceDomain,
+      );
       _clientId = creds['client_id'];
       _clientSecret = creds['client_secret'];
 
-      setState(() => _statusMessage = 'Apertura pagina di autorizzazione dell\'istanza...');
+      setState(
+        () => _statusMessage =
+            'Apertura pagina di autorizzazione dell\'istanza...',
+      );
 
       // 2. Genera l'URL OAuth e apre il browser dell'istanza
       final authUrl = DynamicActivityPubOAuth.getAuthorizationUrl(
@@ -97,7 +110,10 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
         throw Exception('Impossibile aprire il browser per la registrazione.');
       }
 
-      setState(() => _statusMessage = 'In attesa dell\'autorizzazione su $instanceDomain...');
+      setState(
+        () => _statusMessage =
+            'In attesa dell\'autorizzazione su $instanceDomain...',
+      );
     } catch (e) {
       setState(() {
         _isConnecting = false;
@@ -108,7 +124,9 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
 
   /// 3. Gestisce il token exchange ed il sync del profilo con Supabase al ritorno dal Deep Link
   void _handleOAuthCallback(String code) async {
-    if (_currentInstance == null || _clientId == null || _clientSecret == null) {
+    if (_currentInstance == null ||
+        _clientId == null ||
+        _clientSecret == null) {
       setState(() {
         _isConnecting = false;
         _errorMessage = 'Sessione OAuth scaduta o non valida. Riprova.';
@@ -116,7 +134,9 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
       return;
     }
 
-    setState(() => _statusMessage = 'Scambio token e autenticazione in corso...');
+    setState(
+      () => _statusMessage = 'Scambio token e autenticazione in corso...',
+    );
 
     try {
       // Scambio codice -> Access Token
@@ -130,12 +150,15 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
       setState(() => _statusMessage = 'Recupero dati profilo federato...');
 
       // Recupera il profilo dall'istanza ActivityPub
-      final fediverseProfile = await DynamicActivityPubOAuth.fetchFediverseProfile(
-        instanceDomain: _currentInstance!,
-        accessToken: accessToken,
-      );
+      final fediverseProfile =
+          await DynamicActivityPubOAuth.fetchFediverseProfile(
+            instanceDomain: _currentInstance!,
+            accessToken: accessToken,
+          );
 
-      setState(() => _statusMessage = 'Sincronizzazione account su Supabase...');
+      setState(
+        () => _statusMessage = 'Sincronizzazione account su Supabase...',
+      );
 
       // Crea o aggiorna il profilo su Supabase
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -160,9 +183,7 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Accedi con ActivityPub'),
-      ),
+      appBar: AppBar(title: const Text('Accedi con ActivityPub')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -170,13 +191,18 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Fediverso / ActivityPub',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                'ActivityPub',
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
-                'Inserisci il tuo handle federato o l\'indirizzo della tua istanza (es. mastodon.social, pixelfed.social, fosstodon.org).\nFeditok si connetterà dinamicamente in OAuth.',
-                style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.4),
+                'Inserisci il tuo handle o l\'indirizzo della tua istanza (es. mastodon.social, pixelfed.social, fosstodon.org).\nFeditok si connetterà dinamicamente in OAuth.',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 24),
 
@@ -186,11 +212,16 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                    border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.5),
+                    ),
                   ),
                   child: Text(
                     _errorMessage!,
-                    style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -203,7 +234,9 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                   labelText: 'Istanza o Handle (es. @niko@mastodon.social)',
                   hintText: 'mastodon.social',
                   prefixIcon: const Icon(Icons.hub_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -213,7 +246,14 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   backgroundColor: Theme.of(context).colorScheme.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 child: _isConnecting
                     ? Column(
@@ -221,22 +261,25 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                           const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           ),
                           if (_statusMessage != null) ...[
                             const SizedBox(height: 8),
                             Text(
                               _statusMessage!,
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white70,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           ],
                         ],
                       )
-                    : const Text(
-                        'Avvia Dynamic OAuth',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+                    : const Text('Accedi con ActivityPub'),
               ),
             ],
           ),
