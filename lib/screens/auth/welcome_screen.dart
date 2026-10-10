@@ -108,7 +108,7 @@ class WelcomeScreen extends StatelessWidget {
                     Icon(Icons.hub_outlined),
                     SizedBox(width: 12),
                     Text(
-                      'Accedi con ActivityPub (Fediverso)',
+                      'Accedi con ActivityPub',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ],
@@ -118,7 +118,7 @@ class WelcomeScreen extends StatelessWidget {
 
               Center(
                 child: Text(
-                  'Feditok is Open Source',
+                  'Feditok is Open Source. Check it out on GitHub!',
                   style: TextStyle(color: Colors.grey[500], fontSize: 12),
                 ),
               ),

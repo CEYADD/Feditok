@@ -8,6 +8,7 @@ class UserProfile {
   final bool isFediverse;
   final String? fediverseHandle;
   final String rank;
+  final bool isOnboardingCompleted;
   final DateTime createdAt;
 
   UserProfile({
@@ -20,6 +21,7 @@ class UserProfile {
     this.isFediverse = false,
     this.fediverseHandle,
     this.rank = 'User',
+    this.isOnboardingCompleted = false,
     required this.createdAt,
   });
 
@@ -34,6 +36,7 @@ class UserProfile {
       isFediverse: json['is_fediverse'] as bool? ?? false,
       fediverseHandle: json['fediverse_handle'] as String?,
       rank: json['rank'] as String? ?? 'User',
+      isOnboardingCompleted: json['is_onboarding_completed'] as bool? ?? false,
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -51,6 +54,7 @@ class UserProfile {
       'is_fediverse': isFediverse,
       'fediverse_handle': fediverseHandle,
       'rank': rank,
+      'is_onboarding_completed': isOnboardingCompleted,
     };
   }
 }

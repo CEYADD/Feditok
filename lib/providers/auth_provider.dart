@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -53,7 +54,28 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Verifica se uno username è già preso nel database Supabase
+  // Verifica se un'email ha già un profilo o un account registrato
+  Future<Map<String, dynamic>> checkUserStatus(String email) async {
+    try {
+      final res = await _supabase
+          .from('profiles')
+          .select()
+          .eq('username', email.trim().toLowerCase()) // O ricerca per email se salvata
+          .maybeSingle();
+      
+      if (res != null) {
+        final profile = UserProfile.fromJson(res);
+        return {
+          'exists': true,
+          'isOnboardingCompleted': profile.isOnboardingCompleted,
+        };
+      }
+      return {'exists': false, 'isOnboardingCompleted': false};
+    } catch (e) {
+      return {'exists': false, 'isOnboardingCompleted': false};
+    }
+  }
+
   Future<bool> checkUsernameExists(String username) async {
     try {
       final res = await _supabase
@@ -67,17 +89,50 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // Verifica se un'email esiste nel sistema
-  Future<bool> checkEmailExists(String email) async {
+  // Password reset email request
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _supabase.auth.resetPasswordForEmail(email.trim());
+  }
+
+  // Secure email change
+  Future<void> updateEmailSecure(String newEmail) async {
+    await _supabase.auth.updateUser(
+      UserAttributes(email: newEmail.trim()),
+    );
+  }
+
+  // Upload Avatar to 'ProfilePic' storage bucket (supports GIF in loop)
+  Future<String?> uploadAvatarToProfilePicBucket(String localFilePath) async {
+    final user = _supabase.auth.currentUser;
+    final userId = user?.id ?? _currentProfile?.id ?? 'guest';
+    
     try {
-      await _supabase.from('profiles').select('id').limit(1);
-      return false;
+      final file = File(localFilePath);
+      if (!await file.exists()) return localFilePath;
+
+      final extension = localFilePath.split('.').last.toLowerCase();
+      final fileName = '$userId-${DateTime.now().millisecondsSinceEpoch}.$extension';
+      
+      final storagePath = 'avatars/$fileName';
+      
+      await _supabase.storage.from('ProfilePic').upload(
+        storagePath,
+        file,
+        fileOptions: FileOptions(
+          upsert: true,
+          contentType: extension == 'gif' ? 'image/gif' : 'image/$extension',
+        ),
+      );
+
+      final publicUrl = _supabase.storage.from('ProfilePic').getPublicUrl(storagePath);
+      return publicUrl;
     } catch (e) {
-      return false;
+      debugPrint('Error uploading avatar to ProfilePic bucket: $e');
+      return localFilePath;
     }
   }
 
-  // Autenticazione / Registrazione ActivityPub simulata con persistenza profilo
+  // Autenticazione / Registrazione ActivityPub simulata
   Future<UserProfile?> loginOrRegisterFediverse(String fediverseHandle) async {
     _isLoading = true;
     notifyListeners();
@@ -92,7 +147,6 @@ class AuthProvider with ChangeNotifier {
         _currentProfile = UserProfile.fromJson(res);
         return _currentProfile;
       } else {
-        // Nuovo utente federato
         return null;
       }
     } catch (e) {
@@ -138,7 +192,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // Salva l'onboarding dell'utente
+  // Salva l'onboarding dell'utente e imposta is_onboarding_completed = true
   Future<void> completeOnboarding({
     required String fullName,
     required String username,
@@ -147,25 +201,32 @@ class AuthProvider with ChangeNotifier {
     String? fediverseHandle,
   }) async {
     final user = _supabase.auth.currentUser;
-    final userId = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    // RISOLUZIONE BUG #5: Usa SEMPRE l'UUID valido di auth.currentUser se presente
+    final userId = user?.id;
+
+    if (userId == null) {
+      throw Exception("Utente non autenticato. Impossibile completare l'onboarding senza un ID utente valido.");
+    }
+
+    String? uploadedAvatarPublicUrl = avatarUrl;
+    if (avatarUrl != null && !avatarUrl.startsWith('http')) {
+      uploadedAvatarPublicUrl = await uploadAvatarToProfilePicBucket(avatarUrl);
+    }
 
     final profileData = {
       'id': userId,
       'full_name': fullName,
       'username': username.trim().toLowerCase(),
-      'avatar_url': avatarUrl,
+      'avatar_url': uploadedAvatarPublicUrl,
       'is_fediverse': isFediverse,
       'fediverse_handle': fediverseHandle,
       'rank': 'User',
+      'is_onboarding_completed': true, // Impostato a true alla fine!
       'created_at': DateTime.now().toIso8601String(),
     };
 
     await _supabase.from('profiles').upsert(profileData);
-    if (user != null) {
-      await fetchProfile(user.id);
-    } else {
-      _currentProfile = UserProfile.fromJson(profileData);
-    }
+    await fetchProfile(userId);
     notifyListeners();
   }
 
@@ -185,7 +246,15 @@ class AuthProvider with ChangeNotifier {
     if (username != null) updates['username'] = username.trim().toLowerCase();
     if (fullName != null) updates['full_name'] = fullName;
     if (bio != null) updates['bio'] = bio;
-    if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
+
+    if (avatarUrl != null) {
+      if (!avatarUrl.startsWith('http')) {
+        updates['avatar_url'] = await uploadAvatarToProfilePicBucket(avatarUrl);
+      } else {
+        updates['avatar_url'] = avatarUrl;
+      }
+    }
+
     if (bannerUrl != null) updates['banner_url'] = bannerUrl;
 
     await _supabase.from('profiles').update(updates).eq('id', currentId);

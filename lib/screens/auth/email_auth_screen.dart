@@ -19,7 +19,9 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
   bool _isCheckingEmail = false;
   bool _emailChecked = false;
   bool _accountExists = false;
+  bool _isOnboardingCompleted = false;
   bool _acceptedLicense = false;
+  bool _showConfirmEmailNotice = false;
   String? _errorMessage;
 
   @override
@@ -43,13 +45,13 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
     });
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    // Verifichiamo se l'email appartiene a un utente registrato
-    final exists = await authProvider.checkEmailExists(email);
+    final status = await authProvider.checkUserStatus(email);
 
     setState(() {
       _isCheckingEmail = false;
       _emailChecked = true;
-      _accountExists = exists;
+      _accountExists = status['exists'] ?? false;
+      _isOnboardingCompleted = status['isOnboardingCompleted'] ?? false;
     });
   }
 
@@ -64,7 +66,16 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
       // Login
       try {
         await authProvider.signInWithEmail(email, password);
-        if (mounted) Navigator.pop(context);
+        if (!mounted) return;
+
+        if (!_isOnboardingCompleted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+          );
+        } else {
+          Navigator.pop(context);
+        }
       } catch (e) {
         setState(() => _errorMessage = 'Password errata o errore di accesso.');
       }
@@ -82,15 +93,40 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
 
       try {
         final user = await authProvider.signUpWithEmail(email, password);
-        if (user != null && mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const OnboardingScreen()),
-          );
+        if (mounted) {
+          if (user != null && user.emailConfirmedAt == null) {
+            // MOSTRA SCHERMATA DI CONFERMA INDIRIZZO EMAIL
+            setState(() => _showConfirmEmailNotice = true);
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+            );
+          }
         }
       } catch (e) {
         setState(() => _errorMessage = 'Errore durante la registrazione: ${e.toString()}');
       }
+    }
+  }
+
+  void _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _errorMessage = 'Inserisci l\'email per il recupero password.');
+      return;
+    }
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.sendPasswordResetEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email di reset password inviata! Controlla la tua casella di posta.')),
+        );
+      }
+    } catch (e) {
+      setState(() => _errorMessage = 'Impossibile inviare l\'email di reset.');
     }
   }
 
@@ -103,6 +139,42 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showConfirmEmailNotice) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Conferma Email')),
+        body: Padding(
+          padding: const EdgeInsets.all(28.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.mark_email_unread_outlined, size: 80, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(height: 24),
+              const Text(
+                'Conferma il tuo indirizzo email',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Dovrebbe esserti arrivata una mail per confermare l\'indirizzo email!\nUna volta confermato, torna qui ed effettua l\'accesso.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[400], fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Torna alla schermata iniziale'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Accedi / Registrati'),
@@ -179,9 +251,18 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
 
-                if (!_accountExists) ...[
+                if (_accountExists) ...[
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _handleForgotPassword,
+                      child: const Text('Hai dimenticato la password?'),
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
                   TextField(
                     controller: _confirmPasswordController,
                     obscureText: true,
@@ -220,8 +301,8 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
                 ],
+                const SizedBox(height: 16),
 
                 ElevatedButton(
                   onPressed: _handleSubmit,

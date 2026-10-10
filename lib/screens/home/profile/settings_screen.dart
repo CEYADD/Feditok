@@ -35,7 +35,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: isFediverse
                 ? null
                 : () {
-                    _showSimpleDialog(context, 'Modifica Email', 'Inserisci la nuova email da associare al tuo account.');
+                    _showSecureEmailChangeDialog(context, authProvider);
                   },
           ),
           ListTile(
@@ -123,6 +123,88 @@ class SettingsScreen extends StatelessWidget {
           fontWeight: FontWeight.bold,
           color: isDanger ? Colors.redAccent : Theme.of(context).colorScheme.primary,
         ),
+      ),
+    );
+  }
+
+  void _showSecureEmailChangeDialog(BuildContext context, AuthProvider authProvider) {
+    final oldEmailController = TextEditingController();
+    final newEmailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Modifica Email (Sicura)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '1. Inserisci la tua email attuale e la nuova email.\n'
+              '2. Dovrai confermare il link inviato sulla vecchia email.\n'
+              '3. Dopodiché ritorna nell\'app e conferma la nuova email.',
+              style: TextStyle(fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: oldEmailController,
+              decoration: InputDecoration(
+                labelText: 'Email Attuale *',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: newEmailController,
+              decoration: InputDecoration(
+                labelText: 'Nuova Email *',
+                prefixIcon: const Icon(Icons.mark_email_read_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+          ElevatedButton(
+            onPressed: () async {
+              final newEmail = newEmailController.text.trim();
+              if (newEmail.isEmpty || !newEmail.contains('@')) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Inserisci un indirizzo email valido.')),
+                );
+                return;
+              }
+
+              try {
+                await authProvider.updateEmailSecure(newEmail);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('Conferma Inviata'),
+                      content: const Text(
+                        'Richiesta inviata! Ora controlla la tua vecchia email per confermarla, ritorna nell\'app, e infine conferma il cambio sulla nuova email.',
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+                      ],
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Errore modifica email: ${e.toString()}')),
+                  );
+                }
+              }
+            },
+            child: const Text('Invia Richiesta'),
+          ),
+        ],
       ),
     );
   }

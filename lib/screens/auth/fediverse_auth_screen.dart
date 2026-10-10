@@ -123,7 +123,7 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
               TextField(
                 controller: _usernameController,
                 decoration: InputDecoration(
-                  labelText: 'Username del tuo account federato',
+                  labelText: 'Username (es. @niko)',
                   prefixIcon: const Icon(Icons.person_outline),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
