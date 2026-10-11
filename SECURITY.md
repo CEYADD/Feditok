@@ -19,5 +19,5 @@ Here's the table for the minimum requirements
 
 ## Reporting a Vulnerability
 
-If you find a security vulnerability (like SQL injection, keys, ecc.) create an issue PROMPTLY with the tag SECURITY VULNERABILITY.
-It will automaticly be assigned and review first by AI to check if it is real (AI will NOT close the issue immidiatly) then by human.
+If you find a security vulnerability (like SQL injection, keys, ecc.) go to the security tab and REPORT IT AS SOON AS POSSIBLE
+An human will handle the report.
