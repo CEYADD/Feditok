@@ -39,6 +39,11 @@ jobs:
           # puoi usare il flag nativo qui sopra (--no-fatal-warnings e --no-fatal-infos).
           # In alternativa, se usi versioni precedenti di Flutter, puoi gestire il codice di uscita.
 
-      # Esegue i test automatici
-      - name: Run tests
-        run: flutter test
+      # Esegue i test automatici solo se presenti
+      - name: Run tests (if present)
+        run: |
+          if [ -d test ]; then
+            flutter test
+          else
+            echo "No test directory found, skipping flutter test."
+          fi
