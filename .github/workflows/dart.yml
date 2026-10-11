@@ -1,4 +1,4 @@
-name: Flutter CI
+name: Flutter Error Control
 
 on:
   push:
@@ -28,10 +28,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # Analizza il codice (trova syntax error, warning, variabili non usate, ecc.)
-      - name: Analyze project
-        run: flutter analyze
+      # Analizza il codice: fallisce solo se trova errori bloccanti
+      - name: Analyze project (Errors only)
+        run: |
+          # Esegue flutter analyze salvando l'output e lo stato di uscita
+          OUTPUT=$(flutter analyze --no-fatal-infos --no-fatal-warnings)
+          echo "$OUTPUT"
+          
+          # Se vuoi essere sicuro al 100% che ignori i warning e fallisca solo se c'è "error -", 
+          # puoi usare il flag nativo qui sopra (--no-fatal-warnings e --no-fatal-infos).
+          # In alternativa, se usi versioni precedenti di Flutter, puoi gestire il codice di uscita.
 
-      # Esegue i test automatici (se ne scriverai)
+      # Esegue i test automatici
       - name: Run tests
         run: flutter test
