@@ -1,0 +1,1 @@
+This folder contains the Android files generated and added by a GitHub Actions workflow.

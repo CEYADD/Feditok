@@ -1,0 +1,60 @@
+name: iPhone Debug Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Configura Java per Flutter
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configura Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Genera Timestamp per il nome
+        id: timestamp
+        run: |
+          echo "date_str=$(date +'%Y-%m-%d_%H-%M')" >> "$GITHUB_OUTPUT"
+
+      - name: Build iOS Debug (senza code signing)
+        run: |
+          flutter build ios --debug --no-codesign
+
+      - name: Pacchettizza in formato .ipa per SideStore/Sideloadly
+        run: |
+          mkdir -p Payload
+          mv build/ios/iphoneos/Runner.app Payload/
+          zip -r "DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.ipa" Payload
+          
+          # Sposta il file ipa nella cartella dedicata del progetto
+          mkdir -p "ios/iOS Debug Releses"
+          mv "DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.ipa" "ios/iOS Debug Releses/"
+
+      - name: Carica Artifact (Scaricabile da GitHub)
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-Debug-IPA-${{ steps.timestamp.outputs.date_str }}
+          path: "ios/iOS Debug Releses/DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.ipa"
+
+      - name: Commit e Push del file nella repo
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add "ios/iOS Debug Releses/*.ipa"
+          git commit -m "build(ios): auto-generated DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}" || echo "Nessuna modifica da inviare"
+          git push
