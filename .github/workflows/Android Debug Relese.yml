@@ -49,10 +49,35 @@ jobs:
           name: Android-Debug-APK-${{ steps.timestamp.outputs.date_str }}
           path: "android/Android Debug Releses/DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.apk"
 
-      - name: Commit e Push del file nella repo
+      - name: Configura Git LFS e verifica dimensione file
         run: |
+          # Configura utente git
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add "android/Android Debug Releses/*.apk"
+
+          # Percorso del file APK generato
+          APK_PATH="android/Android Debug Releses/DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.apk"
+
+          # Ottieni la dimensione del file in byte
+          FILE_SIZE=$(stat -c%s "$APK_PATH")
+          THRESHOLD=$((100 * 1024 * 1024)) # 100 MB in byte
+
+          echo "Dimensione file: $((FILE_SIZE / 1024 / 1024)) MB"
+
+          if [ "$FILE_SIZE" -ge "$THRESHOLD" ]; then
+            echo "Il file è >= 100MB. Configuro e uso Git LFS."
+            sudo apt-get update && sudo apt-get install -y git-lfs
+            git lfs install
+            git lfs track "*.apk"
+            git add .gitattributes
+          else
+            echo "Il file è inferiore a 100MB, procedo con Git standard."
+          fi
+
+          git add "$APK_PATH"
+
+      - name: Commit e Push del file nella repo
+        run: |
           git commit -m "build(android): auto-generated DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}" || echo "Nessuna modifica da inviare"
-          git push
+          git push origin main
+          git lfs push origin main
