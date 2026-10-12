@@ -54,10 +54,35 @@ jobs:
           name: iOS-Debug-IPA-${{ steps.timestamp.outputs.date_str }}
           path: "ios/iOS Debug Releses/DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.ipa"
 
-      - name: Commit e Push del file nella repo
+      - name: Configura Git LFS e verifica dimensione file
         run: |
+          # Configura utente git
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add "ios/iOS Debug Releses/*.ipa"
+
+          # Percorso del file IPA generato
+          IPA_PATH="ios/iOS Debug Releses/DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}.ipa"
+
+          # Ottieni la dimensione del file in byte (specifico per macOS)
+          FILE_SIZE=$(stat -f%z "$IPA_PATH")
+          THRESHOLD=$((100 * 1024 * 1024)) # 100 MB in byte
+
+          echo "Dimensione file: $((FILE_SIZE / 1024 / 1024)) MB"
+
+          if [ "$FILE_SIZE" -ge "$THRESHOLD" ]; then
+            echo "Il file è >= 100MB. Configuro e uso Git LFS."
+            brew install git-lfs
+            git lfs install
+            git lfs track "*.ipa"
+            git add .gitattributes
+          else
+            echo "Il file è inferiore a 100MB, procedo con Git standard."
+          fi
+
+          git add "$IPA_PATH"
+
+      - name: Commit e Push del file nella repo
+        run: |
           git commit -m "build(ios): auto-generated DEBUG RELEASE - ${{ steps.timestamp.outputs.date_str }}" || echo "Nessuna modifica da inviare"
-          git push
+          git push origin main
+          git lfs push origin main
