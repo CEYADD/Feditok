@@ -2,7 +2,7 @@
 name: Accessibility Barrier
 about: Report an Accessibility Barrier
 title: "[ACCESSIBILITY]"
-labels: accessibility
+labels: accessibility, documentation
 assignees: ''
 type: Bug
 
