@@ -1,0 +1,151 @@
+name: WCAG Accessibility Audit & Issue Generator
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # Permesso per leggere e creare le Issue su GitHub
+
+jobs:
+  wcag-and-lint-audit:
+    name: Run Accessibility Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configura Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configura Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Installa Dipendenze
+        run: flutter pub get
+
+      - name: Analisi Statica Codice Dart (Accessibilità)
+        id: flutter_analyze
+        run: |
+          # Analizza il codice sorgente in lib/ e salva l'output
+          flutter analyze lib/ > analyze_output.txt || true
+          cat analyze_output.txt
+
+      - name: Build Flutter Web per Audit WCAG
+        run: flutter build web --release
+
+      - name: Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installa Serve, Axe-CLI e Octokit
+        run: npm install -g serve @axe-core/cli @octokit/rest
+
+      - name: Esegui Audit WCAG e Gestisci Issue (con controllo duplicati)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Avvia il server web locale in background
+          serve -s build/web -l 3000 &
+          sleep 4
+
+          # Esegue l'audit Axe WCAG e salva il report JSON completo
+          axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21a,wcag21aa --json > axe_results.json || true
+
+          # Script Node.js che verifica gli errori, controlla le issue esistenti e ne crea di nuove solo se uniche
+          node -e '
+          const fs = require("fs");
+          const { execSync } = require("child_process");
+
+          async function processErrors() {
+            let hasErrors = false;
+
+            // 0. Recupera i titoli delle issue APERTE con la label "accessibility" per evitare duplicati
+            let existingTitles = [];
+            try {
+              const existingIssuesJson = execSync(`gh issue list --label "accessibility" --state open --json title`, { encoding: "utf8" });
+              existingTitles = JSON.parse(existingIssuesJson || "[]").map(i => i.title);
+            } catch (e) {
+              console.log("Nessuna issue precedente trovata o errore nel recupero:", e.message);
+            }
+
+            // Funzione helper per creare l issue solo se il titolo non esiste già
+            function createIssueIfUnique(title, body) {
+              if (existingTitles.includes(title)) {
+                console.log(`[SKIP] Issue già esistente per: "${title}"`);
+                return;
+              }
+              console.log(`[CREATING ISSUE] "${title}"`);
+              try {
+                // Escape delle virgolette doppie per la CLI
+                const safeTitle = title.replace(/"/g, "\\\"");
+                const safeBody = body.replace(/"/g, "\\\"");
+                execSync(`gh issue create --title "${safeTitle}" --body "${safeBody}" --label "accessibility" --label "priority: medium"`);
+                existingTitles.push(title); // Aggiunge alla lista locale per evitare duplicati all interno dello stesso run
+              } catch (e) {
+                console.error("Errore durante la creazione dell issue:", e.message);
+              }
+            }
+
+            // 1. Processa gli errori dall analisi del codice Dart
+            if (fs.existsSync("analyze_output.txt")) {
+              const analyzeLines = fs.readFileSync("analyze_output.txt", "utf8").split("\n");
+              for (const line of analyzeLines) {
+                if (line.includes("info •") || line.includes("warning •") || line.includes("error •")) {
+                  if (line.toLowerCase().includes("semantic") || line.toLowerCase().includes("accessibility") || line.toLowerCase().includes("label")) {
+                    hasErrors = true;
+                    const title = `[WCAG/Code] ${line.trim().substring(0, 80)}...`;
+                    const body = `### Dettagli Errore Accessibilità nel Codice\n\n\`\`\`text\n${line.trim()}\n\`\`\`\n\n*Inviato automaticamente dalla pipeline di integrazione continua WCAG.*`;
+                    createIssueIfUnique(title, body);
+                  }
+                }
+              }
+            }
+
+            // 2. Processa gli errori dell audit Axe Web WCAG
+            if (fs.existsSync("axe_results.json")) {
+              const axeData = JSON.parse(fs.readFileSync("axe_results.json", "utf8"));
+              const violations = axeData[0]?.violations || [];
+
+              if (violations.length > 0) {
+                hasErrors = true;
+                for (const violation of violations) {
+                  const title = `[WCAG Error] Violazione ${violation.id}:${violation.help}`;
+                  let nodesList = violation.nodes.map(node => `- **Elemento/HTML**: \`${node.html}\` \n  - **Target/Selector**: \`${node.target.join(", ")}\``).join("\n");
+                  
+                  const body = `### Violazione Standard WCAG Rilevata\n\n` +
+                    `**Regola**: ${violation.id}\n` +
+                    `**Impatto**: ${violation.impact}\n` +
+                    `**Descrizione**: ${violation.description}\n` +
+                    `**Linee Guida / Documentazione**: [Consulta la regola](${violation.helpUrl})\n\n` +
+                    `#### Elementi Interessati:\n${nodesList}\n\n` +
+                    `*Questa issue è stata generata automaticamente dall audit WCAG con axe-core.*`;
+
+                  createIssueIfUnique(title, body);
+                }
+              }
+            }
+
+            // 3. Il job fallisce alla fine solo se ci sono stati errori
+            if (hasErrors) {
+              console.error("\n❌ Sono stati trovati errori di accessibilità! Controlla le issue su GitHub.");
+              process.exit(1);
+            } else {
+              console.log("\n✅ Nessuna violazione di accessibilità trovata! Il progetto è conforme ai WCAG.");
+            }
+          }
+
+          processErrors();
+          '
