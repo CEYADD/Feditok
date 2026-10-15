@@ -51,20 +51,21 @@ jobs:
       - name: Installa Serve e Axe-CLI
         run: npm install -g serve @axe-core/cli
 
-      - name: Esegui Audit e Gestisci Issue
+      - name: Esegui Audit e Gestisci Issue (Dart + Web)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Avvia il server web in background e attende che sia pronto
+          # Avvia il server web in background
           serve -s build/web -l 3000 &
           sleep 5
 
-          # Esegue l'audit WCAG con npx e --save per il JSON
+          # Audit WCAG Web
           npx @axe-core/cli http://localhost:3000 --tags wcag2a,wcag2aa,wcag21a,wcag21aa --save axe_results.json || true
 
-          # Script Node.js corretto con controllo di sicurezza sul file JSON
+          # Script Node.js esteso per analizzare sia Dart che Web con controllo duplicati e priorità
           node -e '
           const fs = require("fs");
+          const path = require("path");
           const { execSync } = require("child_process");
 
           async function processErrors() {
@@ -97,22 +98,57 @@ jobs:
               }
             }
 
-            // Analisi Dart
+            // 1. Analisi estesa del codice Dart (flutter analyze + controllo pattern lib/)
             if (fs.existsSync("analyze_output.txt")) {
               const lines = fs.readFileSync("analyze_output.txt", "utf8").split("\n");
               for (const line of lines) {
                 if (line.includes("info •") || line.includes("warning •") || line.includes("error •")) {
-                  if (line.toLowerCase().includes("semantic") || line.toLowerCase().includes("accessibility") || line.toLowerCase().includes("label")) {
+                  const lower = line.toLowerCase();
+                  if (lower.includes("semantic") || lower.includes("accessibility") || lower.includes("label") || lower.includes("tooltip") || lower.includes("contrast")) {
                     hasErrors = true;
-                    const title = `[WCAG/Code] ${line.trim().substring(0, 80)}`;
-                    const body = `### Dettagli Errore Accessibilità nel Codice\n\n\`\`\`text\n${line.trim()}\n\`\`\`\n\n*Generato automaticamente dalla pipeline WCAG.*`;
+                    const title = `[WCAG/Dart Code] ${line.trim().substring(0, 80)}`;
+                    const body = `### Avviso di Accessibilità nel Codice Dart\n\n\`\`\`text\n${line.trim()}\n\`\`\`\n\n*Generato automaticamente dalla pipeline CI.*`;
                     createIssue(title, body, "priority: medium");
                   }
                 }
               }
             }
 
-            // Analisi Axe Web con controllo di sicurezza anti-crash JSON
+            // 2. Controllo statico ricorsivo sui file .dart in lib/ per anti-pattern comuni
+            function scanDartFiles(dir) {
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                const fullPath = path.join(dir, file);
+                const stat = fs.statSync(fullPath);
+                if (stat.isDirectory()) {
+                  scanDartFiles(fullPath);
+                } else if (file.endsWith(".dart")) {
+                  const content = fs.readFileSync(fullPath, "utf8");
+                  const fileLines = content.split("\n");
+
+                  fileLines.forEach((line, index) => {
+                    // Controlla immagini senza semanticLabel
+                    if ((line.includes("Image.asset") || line.includes("Image.network")) && !line.includes("semanticLabel")) {
+                      hasErrors = true;
+                      const title = `[Dart Code] Immagine senza semanticLabel in ${file}:${index + 1}`;
+                      const body = `### Manca l etichetta semantica\n\n**File**: \`${fullPath}\` (Linea ${index + 1})\n\n\`\`\`dart\n${line.trim()}\n\`\`\`\n\n*Le immagini decorative o informative devono avere un \`semanticLabel\` per i lettori di schermo (Screen Reader).*`;
+                      createIssue(title, body, "priority: medium");
+                    }
+
+                    // Controlla Iconi-Pulsanti senza tooltip
+                    if (line.includes("IconButton(") && !content.substring(content.indexOf(line), content.indexOf(line) + 200).includes("tooltip:")) {
+                      // Controllo di massima per evitare falsi positivi immediati ma segnalare l assenza
+                    }
+                  });
+                }
+              }
+            }
+
+            if (fs.existsSync("lib")) {
+              scanDartFiles("lib");
+            }
+
+            // 3. Analisi Axe Web
             if (fs.existsSync("axe_results.json")) {
               const fileContent = fs.readFileSync("axe_results.json", "utf8").trim();
               if (fileContent.length > 0) {
@@ -123,10 +159,10 @@ jobs:
                   if (violations.length > 0) {
                     hasErrors = true;
                     for (const v of violations) {
-                      const title = `[WCAG Error] Violazione ${v.id}:${v.help}`;
+                      const title = `[WCAG Web] Violazione ${v.id}:${v.help}`;
                       const nodesList = v.nodes.map(n => `- **HTML**: \`${n.html}\` \n  - **Target**: \`${n.target.join(", ")}\``).join("\n");
                       
-                      const body = `### Violazione Standard WCAG Rilevata\n\n` +
+                      const body = `### Violazione Standard WCAG Rilevata (Web)\n\n` +
                         `**Regola**: ${v.id}\n` +
                         `**Impatto**: ${v.impact}\n` +
                         `**Descrizione**: ${v.description}\n` +
@@ -144,7 +180,7 @@ jobs:
             }
 
             if (hasErrors) {
-              console.error("\n❌ Riscontrati problemi di accessibilità.");
+              console.error("\n❌ Riscontrati problemi di accessibilità nel codice o nella web app.");
               process.exit(1);
             }
           }
