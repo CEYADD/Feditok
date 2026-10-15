@@ -59,8 +59,8 @@ jobs:
           serve -s build/web -l 3000 &
           sleep 5
 
-          # Esegue l'audit WCAG
-          axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21a,wcag21aa --json > axe_results.json || true
+          # Esegue l'audit WCAG con npx e --save per il JSON
+          npx @axe-core/cli http://localhost:3000 --tags wcag2a,wcag2aa,wcag21a,wcag21aa --save axe_results.json || true
 
           # Script Node.js corretto con controllo di sicurezza sul file JSON
           node -e '
