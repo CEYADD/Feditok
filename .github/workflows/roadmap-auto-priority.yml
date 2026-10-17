@@ -1,0 +1,71 @@
+name: Roadmap Auto Priority Selector
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  auto-priority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select Priority Based on Labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+
+            const priorityHigh = 'priority: high';
+            const priorityMedium = 'priority: medium';
+            const priorityLow = 'priority: low';
+            const priorityLabels = [priorityHigh, priorityMedium, priorityLow];
+
+            const existingPriority = labels.filter(l => priorityLabels.includes(l));
+
+            // If a single priority label is already assigned, keep it and do nothing
+            if (existingPriority.length === 1) {
+              return;
+            }
+
+            // Determine priority based on existing issue labels
+            let targetPriority = null;
+
+            if (labels.some(l => ['bug', 'backend / api'].includes(l))) {
+              targetPriority = priorityHigh;
+            } else if (labels.some(l => ['accessibility', 'enhancement', 'Translation Errors', 'UI/UX'].includes(l))) {
+              targetPriority = priorityMedium;
+            } else if (labels.some(l => ['documentation', 'question', 'good first issue'].includes(l))) {
+              targetPriority = priorityLow;
+            } else {
+              targetPriority = priorityMedium;
+            }
+
+            // Remove unwanted duplicate priority labels if multiple exist
+            for (const p of existingPriority) {
+              if (p !== targetPriority) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    name: p
+                  });
+                } catch (e) {
+                  core.warning(`Could not remove label ${p}: ${e.message}`);
+                }
+              }
+            }
+
+            // Add target priority label if not already present
+            if (!existingPriority.includes(targetPriority)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [targetPriority]
+              });
+              console.log(`Assigned '${targetPriority}' to issue #${issue.number}`);
+            }
