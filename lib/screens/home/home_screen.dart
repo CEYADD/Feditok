@@ -52,8 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
         currentIndex: _currentIndex,
         onTap: _onBottomNavTapped,
         backgroundColor: const Color(0xFF1E1E1E),
-        selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey[500],
+        selectedItemColor: const Color(0xFFA29BFE),
+        unselectedItemColor: Colors.grey[400],
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
         items: const [

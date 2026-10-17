@@ -90,15 +90,21 @@ class _CameraScreenState extends State<CameraScreen> {
                       left: 0,
                       right: 0,
                       child: Center(
-                        child: GestureDetector(
-                          onTap: _toggleRecord,
-                          child: CircleAvatar(
-                            radius: 36,
-                            backgroundColor: _isRecording ? Colors.red : Colors.white,
-                            child: Icon(
-                              _isRecording ? Icons.stop : Icons.videocam,
-                              color: _isRecording ? Colors.white : Colors.black,
-                              size: 32,
+                        child: Semantics(
+                          button: true,
+                          label: _isRecording ? 'Interrompi registrazione video' : 'Avvia registrazione video',
+                          hint: 'Tocca due volte per registrare',
+                          child: InkWell(
+                            onTap: _toggleRecord,
+                            customBorder: const CircleBorder(),
+                            child: CircleAvatar(
+                              radius: 36,
+                              backgroundColor: _isRecording ? Colors.red : Colors.white,
+                              child: Icon(
+                                _isRecording ? Icons.stop : Icons.videocam,
+                                color: _isRecording ? Colors.white : Colors.black,
+                                size: 32,
+                              ),
                             ),
                           ),
                         ),

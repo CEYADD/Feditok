@@ -83,16 +83,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 return Align(
                   alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isMe ? Theme.of(context).colorScheme.primary : Colors.grey[800],
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      msg.content,
-                      style: const TextStyle(color: Colors.white),
+                  child: Semantics(
+                    container: true,
+                    label: '${isMe ? "Tu" : widget.friend.username}: ${msg.content}',
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isMe ? Theme.of(context).colorScheme.primary : Colors.grey[800],
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        msg.content,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                 );
