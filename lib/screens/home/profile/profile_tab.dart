@@ -248,7 +248,7 @@ class _ProfileTabState extends State<ProfileTab> {
             onPressed: () {
               setState(() {
                 for (var n in _notifications) {
-                  // Segna lette
+                  n.isRead = true;
                 }
               });
               Navigator.pop(context);
@@ -339,8 +339,8 @@ class _ProfileTabState extends State<ProfileTab> {
                   color: Colors.grey[800],
                   child: user?.bannerUrl != null
                       ? (user!.bannerUrl!.startsWith('http')
-                          ? Image.network(user.bannerUrl!, fit: BoxFit.cover)
-                          : Image.asset(user.bannerUrl!, fit: BoxFit.cover))
+                          ? Image.network(user.bannerUrl!, fit: BoxFit.cover, semanticLabel: 'Banner del profilo')
+                          : Image.asset(user.bannerUrl!, fit: BoxFit.cover, semanticLabel: 'Banner del profilo'))
                       : null,
                 ),
                 Positioned(
