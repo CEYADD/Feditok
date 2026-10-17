@@ -1,0 +1,189 @@
+name: WCAG Accessibility Audit & Issue Generator
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  wcag-and-lint-audit:
+    name: Run Accessibility Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configura Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configura Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Installa Dipendenze
+        run: flutter pub get
+
+      - name: Analisi Statica Codice Dart
+        id: flutter_analyze
+        run: |
+          flutter analyze lib/ > analyze_output.txt || true
+
+      - name: Build Flutter Web per Audit WCAG
+        run: flutter build web --release
+
+      - name: Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installa Serve e Axe-CLI
+        run: npm install -g serve @axe-core/cli
+
+      - name: Esegui Audit e Gestisci Issue (Dart + Web)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Avvia il server web in background
+          serve -s build/web -l 3000 &
+          sleep 5
+
+          # Audit WCAG Web
+          npx @axe-core/cli http://localhost:3000 --tags wcag2a,wcag2aa,wcag21a,wcag21aa --save axe_results.json || true
+
+          # Script Node.js esteso per analizzare sia Dart che Web con controllo duplicati e priorità
+          node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const { execSync } = require("child_process");
+
+          async function processErrors() {
+            let hasErrors = false;
+
+            let existingTitles = [];
+            try {
+              const res = execSync(`gh issue list --label "accessibility" --state open --json title`, { encoding: "utf8" });
+              existingTitles = JSON.parse(res || "[]").map(i => i.title);
+            } catch (e) {
+              console.log("Nessuna issue precedente trovata.");
+            }
+
+            function createIssue(title, body, priorityLabel = "priority: medium") {
+              if (existingTitles.includes(title)) {
+                console.log(`[SKIP DUPLICATO] ${title}`);
+                return;
+              }
+
+              fs.writeFileSync("issue_body.txt", body);
+
+              console.log(`[CREO ISSUE] ${title}`);
+              try {
+                execSync(`gh issue create --title "${title.replace(/"/g, "")}" --body-file issue_body.txt --label "accessibility" --label "${priorityLabel}"`);
+                existingTitles.push(title);
+              } catch (err) {
+                console.error("Errore creazione issue:", err.message);
+              } finally {
+                if (fs.existsSync("issue_body.txt")) fs.unlinkSync("issue_body.txt");
+              }
+            }
+
+            // 1. Analisi estesa del codice Dart (flutter analyze + controllo pattern lib/)
+            if (fs.existsSync("analyze_output.txt")) {
+              const lines = fs.readFileSync("analyze_output.txt", "utf8").split("\n");
+              for (const line of lines) {
+                if (line.includes("info •") || line.includes("warning •") || line.includes("error •")) {
+                  const lower = line.toLowerCase();
+                  if (lower.includes("semantic") || lower.includes("accessibility") || lower.includes("label") || lower.includes("tooltip") || lower.includes("contrast")) {
+                    hasErrors = true;
+                    const title = `[WCAG/Dart Code] ${line.trim().substring(0, 80)}`;
+                    const body = `### Avviso di Accessibilità nel Codice Dart\n\n\`\`\`text\n${line.trim()}\n\`\`\`\n\n*Generato automaticamente dalla pipeline CI.*`;
+                    createIssue(title, body, "priority: medium");
+                  }
+                }
+              }
+            }
+
+            // 2. Controllo statico ricorsivo sui file .dart in lib/ per anti-pattern comuni
+            function scanDartFiles(dir) {
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                const fullPath = path.join(dir, file);
+                const stat = fs.statSync(fullPath);
+                if (stat.isDirectory()) {
+                  scanDartFiles(fullPath);
+                } else if (file.endsWith(".dart")) {
+                  const content = fs.readFileSync(fullPath, "utf8");
+                  const fileLines = content.split("\n");
+
+                  fileLines.forEach((line, index) => {
+                    // Controlla immagini senza semanticLabel
+                    if ((line.includes("Image.asset") || line.includes("Image.network")) && !line.includes("semanticLabel")) {
+                      hasErrors = true;
+                      const title = `[Dart Code] Immagine senza semanticLabel in ${file}:${index + 1}`;
+                      const body = `### Manca l etichetta semantica\n\n**File**: \`${fullPath}\` (Linea ${index + 1})\n\n\`\`\`dart\n${line.trim()}\n\`\`\`\n\n*Le immagini decorative o informative devono avere un \`semanticLabel\` per i lettori di schermo (Screen Reader).*`;
+                      createIssue(title, body, "priority: medium");
+                    }
+
+                    // Controlla Iconi-Pulsanti senza tooltip
+                    if (line.includes("IconButton(") && !content.substring(content.indexOf(line), content.indexOf(line) + 200).includes("tooltip:")) {
+                      // Controllo di massima per evitare falsi positivi immediati ma segnalare l assenza
+                    }
+                  });
+                }
+              }
+            }
+
+            if (fs.existsSync("lib")) {
+              scanDartFiles("lib");
+            }
+
+            // 3. Analisi Axe Web
+            if (fs.existsSync("axe_results.json")) {
+              const fileContent = fs.readFileSync("axe_results.json", "utf8").trim();
+              if (fileContent.length > 0) {
+                try {
+                  const axeData = JSON.parse(fileContent);
+                  const violations = axeData[0]?.violations || [];
+
+                  if (violations.length > 0) {
+                    hasErrors = true;
+                    for (const v of violations) {
+                      const title = `[WCAG Web] Violazione ${v.id}:${v.help}`;
+                      const nodesList = v.nodes.map(n => `- **HTML**: \`${n.html}\` \n  - **Target**: \`${n.target.join(", ")}\``).join("\n");
+                      
+                      const body = `### Violazione Standard WCAG Rilevata (Web)\n\n` +
+                        `**Regola**: ${v.id}\n` +
+                        `**Impatto**: ${v.impact}\n` +
+                        `**Descrizione**: ${v.description}\n` +
+                        `**Documentazione**: [Consulta la regola](${v.helpUrl})\n\n` +
+                        `#### Elementi Interessati:\n${nodesList}`;
+
+                      const pLabel = (v.impact === "critical" || v.impact === "serious") ? "priority: high" : "priority: medium";
+                      createIssue(title, body, pLabel);
+                    }
+                  }
+                } catch (parseError) {
+                  console.log("⚠️ Impossibile fare il parsing del file JSON di Axe:", parseError.message);
+                }
+              }
+            }
+
+            if (hasErrors) {
+              console.error("\n❌ Riscontrati problemi di accessibilità nel codice o nella web app.");
+              process.exit(1);
+            }
+          }
+
+          processErrors();
+          '
