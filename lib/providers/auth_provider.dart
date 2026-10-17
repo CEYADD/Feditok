@@ -148,15 +148,39 @@ class AuthProvider with ChangeNotifier {
           .eq('fediverse_handle', handle)
           .maybeSingle();
 
+      final cleanHandle = handle.replaceAll('@', '_').replaceAll('.', '_').toLowerCase();
+      final syntheticEmail = '$cleanHandle@fediverse.feditok';
+      final syntheticPassword = 'Feditok_${cleanHandle}_Secret!';
+
+      var user = _supabase.auth.currentUser;
+      if (user == null) {
+        try {
+          final authRes = await _supabase.auth.signInWithPassword(
+            email: syntheticEmail,
+            password: syntheticPassword,
+          );
+          user = authRes.user;
+        } catch (_) {
+          try {
+            final authRes = await _supabase.auth.signUp(
+              email: syntheticEmail,
+              password: syntheticPassword,
+            );
+            user = authRes.user;
+          } catch (signUpErr) {
+            debugPrint('Notice on Fediverse synthetic auth signup: $signUpErr');
+          }
+        }
+      }
+
       if (res != null) {
         _currentProfile = UserProfile.fromJson(res);
         return _currentProfile!;
       } else {
-        // Genera un UUID per Supabase o inserisci il nuovo profilo federato
-        final user = _supabase.auth.currentUser;
-        final profileId = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final profileId = user?.id;
 
-        final newProfileMap = {
+        final newProfileMap = <String, dynamic>{
+          if (profileId != null) 'id': profileId,
           'username': (fediverseData['username'] as String).toLowerCase(),
           'full_name': fediverseData['full_name'],
           'avatar_url': fediverseData['avatar_url'],

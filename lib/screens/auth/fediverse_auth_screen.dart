@@ -18,6 +18,7 @@ class FediverseAuthScreen extends StatefulWidget {
 
 class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   final _inputController = TextEditingController();
+  final _manualCodeController = TextEditingController();
 
   bool _isConnecting = false;
   String? _statusMessage;
@@ -25,6 +26,7 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
 
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  Timer? _authTimeoutTimer;
 
   String? _currentInstance;
   String? _clientId;
@@ -39,26 +41,56 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
   /// Inizializza l'ascolto del callback Deep Link (`feditok://login-callback?code=...`)
   void _initDeepLinks() {
     _appLinks = AppLinks();
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) {
+        _handleDeepLinkUri(uri);
+      }
+    });
+
     _linkSubscription = _appLinks.uriLinkStream.listen(
-      (uri) {
-        if (uri.scheme == 'feditok' && uri.host == 'login-callback') {
-          final code = uri.queryParameters['code'];
-          if (code != null && code.isNotEmpty) {
-            _handleOAuthCallback(code);
-          }
-        }
-      },
+      _handleDeepLinkUri,
       onError: (err) {
         setState(() => _errorMessage = 'Errore deep link callback: $err');
       },
     );
   }
 
+  void _handleDeepLinkUri(Uri uri) {
+    if (uri.scheme == 'feditok' && uri.host == 'login-callback') {
+      final code = uri.queryParameters['code'];
+      if (code != null && code.isNotEmpty) {
+        _handleOAuthCallback(code);
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _authTimeoutTimer?.cancel();
     _linkSubscription?.cancel();
     _inputController.dispose();
+    _manualCodeController.dispose();
     super.dispose();
+  }
+
+  void _cancelOAuthFlow() {
+    _authTimeoutTimer?.cancel();
+    setState(() {
+      _isConnecting = false;
+      _statusMessage = null;
+      _errorMessage = 'Operazione annullata.';
+    });
+  }
+
+  void _submitManualCode() {
+    final raw = _manualCodeController.text.trim();
+    if (raw.isEmpty) return;
+    String code = raw;
+    final uri = Uri.tryParse(raw);
+    if (uri != null && uri.queryParameters.containsKey('code')) {
+      code = uri.queryParameters['code']!;
+    }
+    _handleOAuthCallback(code);
   }
 
   void _startDynamicOAuthFlow() async {
@@ -114,7 +146,19 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
         () => _statusMessage =
             'In attesa dell\'autorizzazione su $instanceDomain...',
       );
+
+      _authTimeoutTimer?.cancel();
+      _authTimeoutTimer = Timer(const Duration(seconds: 90), () {
+        if (!mounted || !_isConnecting) return;
+        setState(() {
+          _isConnecting = false;
+          _errorMessage =
+              'Tempo di attesa per l\'autorizzazione scaduto su $instanceDomain. '
+              'Puoi riprovare oppure incollare manualmente il codice di verifica qui sotto.';
+        });
+      });
     } catch (e) {
+      _authTimeoutTimer?.cancel();
       setState(() {
         _isConnecting = false;
         _errorMessage = 'Errore OAuth Dinamico: ${e.toString()}';
@@ -124,6 +168,7 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
 
   /// 3. Gestisce il token exchange ed il sync del profilo con Supabase al ritorno dal Deep Link
   void _handleOAuthCallback(String code) async {
+    _authTimeoutTimer?.cancel();
     if (_currentInstance == null ||
         _clientId == null ||
         _clientSecret == null) {
@@ -159,6 +204,8 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
       setState(
         () => _statusMessage = 'Sincronizzazione account su Supabase...',
       );
+
+      if (!mounted) return;
 
       // Crea o aggiorna il profilo su Supabase
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -281,6 +328,48 @@ class _FediverseAuthScreenState extends State<FediverseAuthScreen> {
                       )
                     : const Text('Accedi con ActivityPub'),
               ),
+
+              if (_isConnecting) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: _cancelOAuthFlow,
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Annulla operazione'),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 12),
+                const Text(
+                  'Il browser non si è reindirizzato automaticamente?\nCopia l\'indirizzo completo della pagina o il codice e incollalo qui:',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _manualCodeController,
+                        decoration: InputDecoration(
+                          hintText: 'Incolla URL callback o codice...',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _submitManualCode,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      ),
+                      child: const Text('Conferma'),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
