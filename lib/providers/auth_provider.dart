@@ -180,7 +180,6 @@ class AuthProvider with ChangeNotifier {
         final profileId = user?.id;
 
         final newProfileMap = <String, dynamic>{
-          if (profileId != null) 'id': profileId,
           'username': (fediverseData['username'] as String).toLowerCase(),
           'full_name': fediverseData['full_name'],
           'avatar_url': fediverseData['avatar_url'],
@@ -192,6 +191,9 @@ class AuthProvider with ChangeNotifier {
           'is_onboarding_completed': true,
           'created_at': DateTime.now().toIso8601String(),
         };
+        if (profileId != null) {
+          newProfileMap['id'] = profileId;
+        }
 
         // Inserimento o upsert nel DB Supabase
         final inserted = await _supabase

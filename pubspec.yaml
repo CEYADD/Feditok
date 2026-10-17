@@ -1,4 +1,4 @@
-name: Feditok
+name: feditok
 description: "A flutter project to replicate tiktok but in the fediverse"
 publish_to: 'none'
 version: 0.0.0+1

@@ -114,7 +114,7 @@ class AppNotification {
   final String title;
   final String message;
   final DateTime createdAt;
-  final bool isRead;
+  bool isRead;
   final String? fromUserId;
 
   AppNotification({
