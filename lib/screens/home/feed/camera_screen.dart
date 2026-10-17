@@ -15,7 +15,6 @@ class _CameraScreenState extends State<CameraScreen> {
   List<CameraDescription>? _cameras;
   bool _isInitializing = true;
   bool _isRecording = false;
-  String? _recordedPath;
 
   @override
   void initState() {
@@ -52,7 +51,6 @@ class _CameraScreenState extends State<CameraScreen> {
       final file = await _controller!.stopVideoRecording();
       setState(() {
         _isRecording = false;
-        _recordedPath = file.path;
       });
       _openUploadDetailsModal(file.path);
     } else {
@@ -169,7 +167,7 @@ class _UploadDetailsModalState extends State<UploadDetailsModal> {
     if (Navigator.canPop(context)) Navigator.pop(context); // Chiude eventuale fotocamera
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Caricato con successo! Titolo: "$title", Tag: ${_taggedUsernames.join(", ")}')),
+      SnackBar(content: Text('Caricato con successo! Titolo: "$title"${desc.isNotEmpty ? " ($desc)" : ""}, Tag: ${_taggedUsernames.join(", ")}')),
     );
   }
 
