@@ -86,6 +86,20 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
         setState(() => _errorMessage = 'Le password non coincidono.');
         return;
       }
+
+      // Controllo robustezza password (Issue #5)
+      final hasMinLength = password.length >= 6;
+      final hasUpper = password.contains(RegExp(r'[A-Z]'));
+      final hasLower = password.contains(RegExp(r'[a-z]'));
+      final hasDigit = password.contains(RegExp(r'[0-9]'));
+      final hasSymbol = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;/~`]'));
+
+      if (!hasMinLength || !hasUpper || !hasLower || !hasDigit || !hasSymbol) {
+        setState(() => _errorMessage =
+            'ERROR: PASSWORD TOO WEAK! It should have 6 Character or more, including Lowercase and Uppercase letters, numbers and a symbol');
+        return;
+      }
+
       if (!_acceptedLicense) {
         setState(() => _errorMessage = 'Devi accettare la licenza su GitHub per procedere.');
         return;
@@ -105,7 +119,13 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
           }
         }
       } catch (e) {
-        setState(() => _errorMessage = 'Errore durante la registrazione: ${e.toString()}');
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('weak') || (errStr.contains('password') && (errStr.contains('short') || errStr.contains('least')))) {
+          setState(() => _errorMessage =
+              'ERROR: PASSWORD TOO WEAK! It should have 6 Character or more, including Lowercase and Uppercase letters, numbers and a symbol');
+        } else {
+          setState(() => _errorMessage = 'Errore durante la registrazione: ${e.toString()}');
+        }
       }
     }
   }
